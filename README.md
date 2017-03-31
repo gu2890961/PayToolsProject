@@ -6,10 +6,7 @@
 
 #  具体使用请看demo
 
-![可爱的小狗狗](http://upload-images.jianshu.io/upload_images/1071689-850c1fb60dfb815d.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 好久没写文章了，最近闲来无事but每天晚上还特么的加班，就想写点什么。看到项目中关于支付的代码写的乱七八糟的，其实还有好多以前写的low比代码😂，有时间再整理整理了。公司多个项目用了第三方支付，所以就先考虑封装下支付，以后项目要集成第三方支付只要三分钟，对于其demo中的代理方法二次封装时候全部采用block回调处理，Soeasy有木有。好了，进入正题，show time！
-> [demo地址(不喜勿喷)](https://github.com/gu2890961/PayToolsProject.git)
-移动支付—微信、支付宝、银联集成整理 
 
  #####  啥，你要图？
 
@@ -65,9 +62,9 @@
 ![银联支付](http://upload-images.jianshu.io/upload_images/1071689-071d74d9982805c0.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 > ###### 注：银联支付传入的ViewController不要传入self，可以传rootVC或者NaVc，不然你就gg了，会发现支付界面释放不了，官方demo也是这样的情况，不走delloc，会导致一系列未知问题。
 
-# 
-> [demo地址(不喜勿喷)](https://github.com/gu2890961/PayToolsProject.git)
-移动支付—微信、支付宝、银联集成整理 
 
 ##具体如何使用请看代码，三分钟没集成算我输
+
+> [简书地址](http://www.jianshu.com/p/1bf40bf20e3e)
+移动支付—微信、支付宝、银联集成整理 
 ￼
