@@ -18,10 +18,15 @@
 
 int rsa_sign_with_private_key_pem(char *message, int message_length
                                   , unsigned char *signature, unsigned int *signature_length
-                                  , char *private_key_file_path)
+                                  , char *private_key_file_path, BOOL rsa2)
 {
-    unsigned char sha1[20];
-    SHA1((unsigned char *)message, message_length, sha1);
+    unsigned char shabuf[(rsa2?(SHA256_DIGEST_LENGTH):(SHA_DIGEST_LENGTH))];
+    if (rsa2) {
+        SHA256((unsigned char *)message, message_length, shabuf);
+    } else {
+        SHA1((unsigned char *)message, message_length, shabuf);
+    }
+    
     int success = 0;
     BIO *bio_private = NULL;
     RSA *rsa_private = NULL;
@@ -31,8 +36,8 @@ int rsa_sign_with_private_key_pem(char *message, int message_length
 	if (rsa_private != nil) {
 		if (1 == RSA_check_key(rsa_private))
 		{
-			int rsa_sign_valid = RSA_sign(NID_sha1
-										  , sha1, 20
+            int rsa_sign_valid = RSA_sign((rsa2?(NID_sha256):(NID_sha1))
+										  , shabuf, (rsa2?(SHA256_DIGEST_LENGTH):(SHA_DIGEST_LENGTH))
 										  , signature, signature_length
 										  , rsa_private);
 			if (1 == rsa_sign_valid)
@@ -51,18 +56,23 @@ int rsa_sign_with_private_key_pem(char *message, int message_length
 
 int rsa_verify_with_public_key_pem(char *message, int message_length
                                    , unsigned char *signature, unsigned int signature_length
-                                   , char *public_key_file_path)
+                                   , char *public_key_file_path, BOOL rsa2)
 {
-    unsigned char sha1[20];
-    SHA1((unsigned char *)message, message_length, sha1);
+    unsigned char shabuf[(rsa2?(SHA256_DIGEST_LENGTH):(SHA_DIGEST_LENGTH))];
+    if (rsa2) {
+        SHA256((unsigned char *)message, message_length, shabuf);
+    } else {
+        SHA1((unsigned char *)message, message_length, shabuf);
+    }
+    
     BIO *bio_public = NULL;
     RSA *rsa_public = NULL;
     bio_public = BIO_new(BIO_s_file());
     BIO_read_filename(bio_public, public_key_file_path);
     rsa_public = PEM_read_bio_RSA_PUBKEY(bio_public, NULL, NULL, NULL);
     
-    int rsa_verify_valid = RSA_verify(NID_sha1
-                                      , sha1, 20
+    int rsa_verify_valid = RSA_verify((rsa2?(NID_sha256):(NID_sha1))
+                                      , shabuf, (rsa2?(SHA256_DIGEST_LENGTH):(SHA_DIGEST_LENGTH))
                                       , signature, signature_length
                                       , rsa_public);
     BIO_free_all(bio_public);
@@ -109,7 +119,7 @@ NSData *dataFromBase64String(NSString *base64String)
     return data;
 }
 
-NSString *rsaSignString(NSString *stringToSign, NSString *privateKeyFilePath, BOOL *signSuccess)
+NSString *rsaSignString(NSString *stringToSign, NSString *privateKeyFilePath, BOOL *signSuccess, BOOL rsa2)
 {
     const char *message = [stringToSign cStringUsingEncoding:NSUTF8StringEncoding];
     int messageLength = (int)strlen(message);
@@ -118,7 +128,7 @@ NSString *rsaSignString(NSString *stringToSign, NSString *privateKeyFilePath, BO
     char *filePath = (char *)[privateKeyFilePath cStringUsingEncoding:NSUTF8StringEncoding];
     int sign_ok = rsa_sign_with_private_key_pem((char *)message, messageLength
                                                 , sig, &sig_len
-                                                , filePath);
+                                                , filePath, rsa2);
     NSString *signedString = nil;
     if (1 == sign_ok)
     {
@@ -133,7 +143,7 @@ NSString *rsaSignString(NSString *stringToSign, NSString *privateKeyFilePath, BO
     return signedString;
 }
 
-void rsaVerifyString(NSString *stringToVerify, NSString *signature, NSString *publicKeyFilePath, BOOL *verifySuccess)
+void rsaVerifyString(NSString *stringToVerify, NSString *signature, NSString *publicKeyFilePath, BOOL *verifySuccess, BOOL rsa2)
 {
     const char *message = [stringToVerify cStringUsingEncoding:NSUTF8StringEncoding];
     int messageLength = (int)[stringToVerify lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
@@ -143,7 +153,7 @@ void rsaVerifyString(NSString *stringToVerify, NSString *signature, NSString *pu
     char *filePath = (char *)[publicKeyFilePath cStringUsingEncoding:NSUTF8StringEncoding];
     int verify_ok = rsa_verify_with_public_key_pem((char *)message, messageLength
                                                    , sig, sig_len
-                                                   , filePath);
+                                                   , filePath, rsa2);
     if (1 == verify_ok)
     {
         *verifySuccess = YES;

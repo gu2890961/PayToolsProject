@@ -11,7 +11,8 @@
 //支付宝先关
 #import <AlipaySDK/AlipaySDK.h>
 #import "Order.h"
-#import "DataSigner.h"
+#import "APAuthV2Info.h"
+#import "RSADataSigner.h"
 //银联支付
 #import "UPPaymentControl.h"
 //微信支付
@@ -19,6 +20,9 @@
 #import "WXUtil.h"
 
 @interface PayToolsManager ()<WXApiDelegate>
+
+/** 是否授权 第三方登录需要授权 */
+@property (nonatomic, assign) BOOL isAuth;
 
 @end
 
@@ -50,6 +54,7 @@
  *  @param failed      失败回调
  */
 - (void)startWeChatPayWithOrderSn:(NSString *)orderSn orderName:(NSString *)orderName orderPrice:(NSString *)orderPrice notiURL:(NSString *)notiUrl paySuccess:(PaySuccessBlock)success payFaild:(PayFailedBlock)failed {
+    self.isAuth = NO;
     self.paySuccessBlock = success;
     self.payfailedBlock = failed;
     if (!_hasRegisteWeChat) {
@@ -102,72 +107,112 @@
     [WXApi sendReq:req];
 }
 
+/**
+ 发起微信授权
+ 
+ @param success 成功
+ @param failed 失败
+ */
+- (void)startWeChatAuthSuccess:(AuthSuccessBlock)success faild:(AuthFailedBlock)failed {
+    self.isAuth = YES;
+    self.authSuccessBlock = success;
+    self.authfailedBlock = failed;
+    if (!_hasRegisteWeChat) {
+        _hasRegisteWeChat = [WXApi registerApp:WX_APP_ID];
+    }
+    if (![WXApi isWXAppInstalled]) {
+        _authfailedBlock?_authfailedBlock(@"您尚未安装微信，请选择其它支付方式"):nil;
+        return;
+    }
+    //开始授权啦
+    SendAuthReq *req = [[SendAuthReq alloc] init];
+    //应用授权作用域，如获取用户个人信息则填写snsapi_userinfo
+    req.scope = @"snsapi_userinfo";
+    //用于保持请求和回调的状态，授权请求后原样带回给第三方。该参数可用于防止csrf攻击（跨站请求伪造攻击），建议第三方带上该参数，可设置为简单的随机数加session进行校验
+    req.state = @"MyApp";
+    //第三方向微信终端发送一个SendAuthReq消息结构
+    [WXApi sendReq:req];
+}
+
 #pragma mark - =======支付宝支付============
 /**
  *  发起支付宝支付
  *
- *  @param orderSn              订单编号
- *  @param orderName            订单名称
- *  @param orderDescription     订单描述
- *  @param orderPrice           商品价格
- *  @param notiUrl              后台回调地址
+ *  @param orderSn              商户网站唯一订单号
+ *  @param orderName            商品的标题/交易标题/订单标题/订单关键字等
+ *  @param orderDescription     (非必填项)商品描述
+ *  @param orderPrice           订单总金额，单位为元，精确到小数点后两位，取值范围[0.01,100000000]
+ *  @param notiUrl              (非必填项)支付宝服务器主动通知商户服务器里指定的页面http路径
  *  @param success              成功回调
  *  @param failed               失败回调
  */
 - (void)startAliPayWithOrderSn:(NSString *)orderSn orderName:(NSString *)orderName orderDescription:(NSString *)orderDescription orderPrice:(NSString *)orderPrice notiURL:(NSString *)notiUrl paySuccess:(PaySuccessBlock)success payFaild:(PayFailedBlock)failed {
+    self.isAuth = NO;
     self.paySuccessBlock = success;
     self.payfailedBlock = failed;
+    
     /*
      *生成订单信息及签名
      */
     //将商品信息赋予AlixPayOrder的成员变量
-    Order *order = [[Order alloc] init];
-    order.partner = PartnerID;//合作身份者id，以2088开头的16位纯数字
-    order.sellerID = SellerID;//收款支付宝账号
-    order.outTradeNO = orderSn; //订单ID（由商家自行制定）
-    order.subject = orderName; //商品标题
-    if (orderDescription && orderDescription.length) {
-        order.body = orderDescription; //商品描述
-    }
+    Order* order = [Order new];
     
-    order.totalFee = [NSString stringWithFormat:@"%@",orderPrice]; //商品价格
-    order.notifyURL =  notiUrl; //回调URL
+    // NOTE: app_id设置
+    order.app_id = AL_APP_ID;
     
-    order.service = @"mobile.securitypay.pay";
-    order.paymentType = @"1";
-    order.inputCharset = @"utf-8";
-    order.itBPay = @"30m";
-    order.showURL = @"m.alipay.com";
+    // NOTE: 支付接口名称
+    order.method = @"alipay.trade.app.pay";
     
-    //应用注册scheme,Info.plist定义URL types
-    NSString *appScheme = APP_SchemeStr;
+    // NOTE: 参数编码格式
+    order.charset = @"utf-8";
     
+    // NOTE: 当前时间点
+    NSDateFormatter* formatter = [NSDateFormatter new];
+    [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+    order.timestamp = [formatter stringFromDate:[NSDate date]];
+    
+    // NOTE: 支付版本
+    order.version = @"1.0";
+    
+    // NOTE: sign_type 根据商户设置的私钥来决定 RSA2或者RSA
+    order.sign_type = @"RSA";
+    
+    // NOTE: 商品数据
+    BizContent *biz_content = [[BizContent alloc] init];
+    biz_content.body = orderDescription;
+    biz_content.subject = orderName;
+    biz_content.out_trade_no = orderSn; //订单ID（由商家自行制定）
+    biz_content.timeout_express = @"30m"; //超时时间设置
+    biz_content.total_amount = orderPrice; //商品价格
     //将商品信息拼接成字符串
-    NSString *orderSpec = [order description];
-    NSLog(@"orderSpec = %@",orderSpec);
+    NSString *orderInfo = [order orderInfoEncoded:NO];
+    NSString *orderInfoEncoded = [order orderInfoEncoded:YES];
+    NSLog(@"orderSpec = %@",orderInfo);
     
-    //获取私钥并将商户信息签名,外部商户可以根据情况存放私钥和签名,只需要遵循RSA签名规范,并将签名字符串base64编码和UrlEncode
-    id<DataSigner> signer = CreateRSADataSigner(PartnerPrivKey);
-    NSString *signedString = [signer signString:orderSpec];
+    // NOTE: 获取私钥并将商户信息签名，外部商户的加签过程请务必放在服务端，防止公私钥数据泄露；
+    //       需要遵循RSA签名规范，并将签名字符串base64编码和UrlEncode
+    NSString *signedString = nil;
+    RSADataSigner* signer = [[RSADataSigner alloc] initWithPrivateKey:RSAPartnerPrivKey];
+    signedString = [signer signString:orderInfo withRSA2:NO];
     
-    //将签名成功字符串格式化为订单字符串,请严格按照该格式
-    NSString *orderString = nil;
+    // NOTE: 如果加签成功，则继续执行支付
     if (signedString != nil) {
-        orderString = [NSString stringWithFormat:@"%@&sign=\"%@\"&sign_type=\"%@\"",
-                       orderSpec, signedString, @"RSA"];
+
+        // NOTE: 将签名成功字符串格式化为订单字符串,请严格按照该格式
+        NSString *orderString = [NSString stringWithFormat:@"%@&sign=%@",
+                                 orderInfoEncoded, signedString];
         __weak typeof(self)weakSelf = self;
-        
-        //开始支付啦
-        [[AlipaySDK defaultService] payOrder:orderString fromScheme:appScheme callback:^(NSDictionary *resultDic) {
+        // NOTE: 调用支付结果开始支付
+        [[AlipaySDK defaultService] payOrder:orderString fromScheme:APP_SchemeStr callback:^(NSDictionary *resultDic) {
             //处理支付结果
             [weakSelf dealWithAlipyResultWith:resultDic];
         }];
     }
-
 }
 
 //处理支付宝 支付结果
 - (void)dealWithAlipyResultWith:(NSDictionary *)resultDic {
+    NSString *errStr = resultDic[@"memo"];
     if ([resultDic[@"resultStatus"] isEqualToString:@"9000"]){
         if (_paySuccessBlock) {
             _paySuccessBlock();
@@ -175,22 +220,124 @@
     }
     if ([resultDic[@"resultStatus"] isEqualToString:@"8000"]) {
         if (_payfailedBlock) {
-            _payfailedBlock(@"正在处理中，请稍候查看结果！");
+            _payfailedBlock(errStr.length?errStr:@"正在处理中，请稍候查看结果！");
         }
     }
     if ([resultDic[@"resultStatus"] isEqualToString:@"4000"]) {
         if (_payfailedBlock) {
-            _payfailedBlock(@"订单支付失败！");
+            _payfailedBlock(errStr.length?errStr:@"订单支付失败！");
         }
     }
     if ([resultDic[@"resultStatus"] isEqualToString:@"6001"]) {
         if (_payfailedBlock) {
-            _payfailedBlock(@"用户中途取消付款！");
+            _payfailedBlock(errStr.length?errStr:@"用户中途取消付款！");
         }
     }
     if ([resultDic[@"resultStatus"] isEqualToString:@"6002"]) {
         if (_payfailedBlock) {
-            _payfailedBlock(@"网络连接出错！");
+            _payfailedBlock(errStr.length?errStr:@"网络连接出错！");
+        }
+    }
+}
+
+/**
+ 发起支付宝登录授权
+ @param isLogin 是否是登录还是授权
+ @param success 成功的回调
+ @param failed 失败回调
+ */
+- (void)startAliAuthType:(BOOL)isLogin success:(AuthSuccessBlock)success faild:(AuthFailedBlock)failed {
+    self.isAuth = YES;
+    self.authSuccessBlock = success;
+    self.authfailedBlock = failed;
+    
+    //生成 auth info 对象
+    APAuthV2Info *authInfo = [APAuthV2Info new];
+    authInfo.pid = AL_Pid;
+    authInfo.appID = AL_APP_ID;
+    //授权类型,AUTHACCOUNT:授权;LOGIN:登录
+    authInfo.authType = isLogin?@"LOGIN":@"AUTHACCOUNT";
+    
+    // 将授权信息拼接成字符串
+    NSString *authInfoStr = [authInfo description];
+    NSLog(@"authInfoStr = %@",authInfoStr);
+    
+    // 获取私钥并将商户信息签名,外部商户可以根据情况存放私钥和签名,只需要遵循RSA签名规范,并将签名字符串base64编码和UrlEncode
+    NSString *signedString = nil;
+    RSADataSigner* signer = [[RSADataSigner alloc] initWithPrivateKey:RSAPartnerPrivKey];
+    signedString = [signer signString:authInfoStr withRSA2:NO];
+    if (signedString.length) {
+        authInfoStr = [NSString stringWithFormat:@"%@&sign=%@&sign_type=%@", authInfoStr, signedString, @"RSA"];
+        __weak __typeof(self) weakSelf = self;
+        //开始授权
+        [[AlipaySDK defaultService] auth_V2WithInfo:authInfoStr fromScheme:APP_SchemeStr callback:^(NSDictionary *resultDic) {
+            [weakSelf dealWithAuthResultWith:resultDic];
+        }];
+    }
+
+}
+//处理微信授权或者登录信息
+- (void)dealWithAuthResultWith:(NSDictionary *)resultDic {
+    //返回的信息  解析
+    /* {
+    resultStatus=9000
+    memo="处理成功"
+    result="success=true&auth_code=d9d1b5acc26e461dbfcb6974c8ff5E64&result_code=200 &user_id=2088003646494707"
+     }
+    */
+    
+    NSLog(@"result = %@",resultDic);
+    // 解析 auth code
+    
+    NSString *resultStatus = resultDic[@"resultStatus"];
+    NSString *result = resultDic[@"result"];
+    
+    if ([resultStatus isEqualToString:@"9000"]) {//成功
+        //result_code为“200”时，代表授权成功。auth_code表示授权成功的授码
+        NSString *authCode = nil;//授权码
+        NSArray *resultArr = [result componentsSeparatedByString:@"&"];
+        NSString *result_code = nil;//授权结果码result_code
+        for (NSString *subResult in resultArr) {
+            if (subResult.length > 10 && [subResult hasPrefix:@"auth_code="]) {
+                authCode = [subResult substringFromIndex:10];
+            }
+            if (subResult.length > 10 && [subResult hasPrefix:@"result_code="]) {
+                result_code = [subResult substringFromIndex:10];
+            }
+        }
+        //授权成功啦
+        if ([result_code isEqualToString:@"200"] && authCode.length) {
+            if (_authSuccessBlock) {
+                _authSuccessBlock(authCode);//授权码
+            }
+        }
+        //授权失败啦
+        else {
+            NSString *errStr = @"系统出现异常";
+            if ([result_code isEqualToString:@"200"] ) {
+                errStr = @"系统异常，请稍后再试或联系支付宝技术支持";
+            }
+            else if ([result_code isEqualToString:@"1005"] ) {
+                errStr = @"账户已冻结，如有疑问，请联系支付宝技术支持";
+            }
+            if (_authfailedBlock) {
+                _authfailedBlock(errStr);
+            }
+        }
+    }
+    else {
+        NSString *errStr = @"系统出现异常";
+        if ([resultStatus isEqualToString:@"4000"]) {
+            errStr = @"系统异常";
+        }
+        else if ([resultStatus isEqualToString:@"6001"]) {
+            errStr = @"用户中途取消";
+        }
+        else if ([resultStatus isEqualToString:@"6002"]) {
+            errStr = @"网络连接出错";
+        }
+        if (_authfailedBlock) {
+            _authfailedBlock(errStr);
         }
     }
 }
@@ -207,6 +354,7 @@
  *  @param failed         失败回调
  */
 - (void)startUnionPay:(NSString *)tn isDebug:(BOOL)isDebug viewController:(UIViewController *)viewController paySuccess:(PaySuccessBlock)success payFaild:(PayFailedBlock)failed {
+    self.isAuth = NO;
     self.paySuccessBlock = success;
     self.payfailedBlock = failed;
     //"00"代表接入生产环境（正式版本需要）；
@@ -226,12 +374,22 @@
     }
     //支付宝
     else if ([url.host isEqualToString:@"safepay"]) {
-        //跳转支付宝钱包进行支付，处理支付结果
+        if (self.isAuth) {
+            // 授权跳转支付宝钱包进行支付，处理支付结果
+            __weak __typeof(self) weakSelf = self;
+            [[AlipaySDK defaultService] processAuth_V2Result:url standbyCallback:^(NSDictionary *resultDic){
+                [weakSelf dealWithAuthResultWith:resultDic];
+            }];
+        }
+        else {
+            //跳转支付宝钱包进行支付，处理支付结果
+            
+            [[AlipaySDK defaultService] processOrderWithPaymentResult:url standbyCallback:^(NSDictionary *resultDic) {
+                NSLog(@"result = %@",resultDic);
+                [weakSelf dealWithAlipyResultWith:resultDic];
+            }];
+        }
         
-        [[AlipaySDK defaultService] processOrderWithPaymentResult:url standbyCallback:^(NSDictionary *resultDic) {
-            NSLog(@"result = %@",resultDic);
-            [weakSelf dealWithAlipyResultWith:resultDic];
-        }];
     }
     //银联
     else if ([url.host isEqualToString:@"uppayresult"]) {
@@ -258,8 +416,9 @@
     return YES;
 }
 
-//微信支付结果回调的方法   收到微信的回应
+//微信结果回调的方法   收到微信的回应
 -(void) onResp:(BaseResp*)resp {
+    //支付类型
     if ([resp isKindOfClass:[PayResp class]]) {
         //支付返回结果，实际支付结果需要去微信服务器端查询
         
@@ -306,6 +465,46 @@
                 }
             }
                 break;
+            default:
+                break;
+        }
+    }
+    //授权类型的消息
+    else if ([resp isKindOfClass:[SendAuthResp class]]) {
+        /*
+         ErrCode	ERR_OK = 0(用户同意)
+         ERR_AUTH_DENIED = -4（用户拒绝授权）
+         ERR_USER_CANCEL = -2（用户取消）
+         code	用户换取access_token的code，仅在ErrCode为0时有效
+         state	第三方程序发送时用来标识其请求的唯一性的标志，由第三方程序调用sendReq时传入，由微信终端回传，state字符串长度不能超过1K
+         lang	微信客户端当前语言
+         country	微信用户当前国家信息
+         */
+        SendAuthResp *authResp = (SendAuthResp *)resp;
+        switch (resp.errCode) {
+            case 0:
+            {
+                //用户换取access_token的code，仅在ErrCode为0时有效
+                if (_authSuccessBlock) {
+                    _authSuccessBlock(authResp.code);
+                }
+            }
+                break;
+            case -4:
+            {
+                if (_authfailedBlock) {
+                    _authfailedBlock(@"用户拒绝授权");
+                }
+            }
+                break;
+            case -2:
+            {
+                if (_authfailedBlock) {
+                    _authfailedBlock(@"用户取消授权");
+                }
+            }
+                break;
+                
             default:
                 break;
         }

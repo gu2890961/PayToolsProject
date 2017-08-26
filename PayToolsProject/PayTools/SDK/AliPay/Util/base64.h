@@ -1,9 +1,6 @@
 /**
  * \file base64.h
  */
-#import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
-
 #ifndef XYSSL_BASE64_H
 #define XYSSL_BASE64_H
 
@@ -62,7 +59,7 @@ int base64_self_test( int verbose );
 }
 #endif
 
-
+#import <Foundation/Foundation.h>
 @interface Base64 : NSObject
 
 + (NSData *)decodeString:(NSString *)string;

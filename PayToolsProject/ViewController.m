@@ -18,7 +18,7 @@
     [super viewDidLoad];
     // Do any additional setup after loading the view, typically from a nib.
      UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    [button setTitle:@"跳转到支付界面" forState:UIControlStateNormal];
+    [button setTitle:@"跳转到支付和授权登录界面" forState:UIControlStateNormal];
     [button sizeToFit];
     [button addTarget:self action:@selector(enterToPayVc) forControlEvents:UIControlEventTouchUpInside];
     button.center = self.view.center;

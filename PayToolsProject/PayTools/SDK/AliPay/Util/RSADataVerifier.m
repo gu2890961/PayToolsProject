@@ -1,15 +1,16 @@
 //
-//  AlixPayDataVerifier.m
-//  SafepayService
+//  RSADataVerifier.m
+//  AliSDKDemo
 //
-//  Created by wenbi on 11-4-11.
-//  Copyright 2011 __MyCompanyName__. All rights reserved.
+//  Created by 亦澄 on 16-8-12.
+//  Copyright (c) 2016年 Alipay. All rights reserved.
 //
 
 #import "RSADataVerifier.h"
 #import "openssl_wrapper.h"
 #import "NSDataEx.h"
 #import "base64.h"
+
 
 @implementation RSADataVerifier
 
@@ -19,7 +20,6 @@
 	}
 	return self;
 }
-
 
 - (NSString *)formatPublicKey:(NSString *)publicKey {
 	
@@ -49,19 +49,8 @@
 	
 }
 
-- (NSString *)algorithmName {
-	return @"RSA";
-}
-
-- (BOOL)verifyString:(NSString *)string withSign:(NSString *)signString {
-	
-//	const char *message = [string cStringUsingEncoding:NSUTF8StringEncoding];
-//    int messageLength = strlen(message);
-//	
-//    unsigned char *signature = (unsigned char *)[signString UTF8String];
-//	unsigned int signatureLength = (unsigned int)strlen((char *)signature);
-//	char *encodedPath = (char *)[_pathForPEMFile cStringUsingEncoding:NSUTF8StringEncoding];
-
+- (BOOL)verifyString:(NSString *)string withSign:(NSString *)signString withRSA2:(BOOL)rsa2 {
+    
 	NSString *documentPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex:0];
 	NSString *path = [documentPath stringByAppendingPathComponent:@"AlixPay-RSAPublicKey"];
 	
@@ -72,7 +61,7 @@
 	[formatKey writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 	
 	BOOL ret;
-	rsaVerifyString(string, signString, path, &ret);
+	rsaVerifyString(string, signString, path, &ret, rsa2);
 	return ret;
 	
 }

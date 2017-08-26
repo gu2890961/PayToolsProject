@@ -53,10 +53,10 @@
 }
 
 - (void)setUI {
-    NSArray *arr = @[@"微信支付",@"支付宝支付",@"银联支付"];
+    NSArray *arr = @[@"微信支付",@"支付宝支付",@"银联支付",@"支付宝登录",@"微信登录"];
     for (NSInteger i = 0; i<arr.count; i++) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-        button.frame = CGRectMake(10, 45*i+self.view.frame.size.height/2.0-40, self.view.frame.size.width-20, 40);
+        button.frame = CGRectMake(10, 45*i+100, self.view.frame.size.width-20, 40);
         button.tag = 2333+i;
         [button setTitle:[arr objectAtIndex:i] forState:UIControlStateNormal];
         [button addTarget:self action:@selector(buttonClick:) forControlEvents:UIControlEventTouchUpInside];
@@ -94,11 +94,32 @@
             break;
         case 2:
         {
-            [[PayToolsManager defaultManager] startUnionPay:@"471905921206425968201" isDebug:NO viewController:self.navigationController paySuccess:^{
+            //获取流水订单号测试地址：http://101.231.204.84:8091/sim/getacptn  实际应该后台返回
+            [[PayToolsManager defaultManager] startUnionPay:@"548408436969359261400" isDebug:YES viewController:self.navigationController paySuccess:^{
                 [weakSelf.view makeToast:@"银联支付成功"];
                 weakSelf.hasCallBack = YES;
             } payFaild:^(NSString *desc) {
                 [weakSelf.view makeToast:desc];
+                weakSelf.hasCallBack = YES;
+            }];
+        }
+            break;
+        case 3:
+        {
+            [[PayToolsManager defaultManager] startAliAuthType:YES success:^(id data) {
+                [weakSelf.view makeToast:[NSString stringWithFormat:@"支付宝授权成功  auth_code=%@",data]];
+            } faild:^(NSString *errr) {
+                [weakSelf.view makeToast:errr];
+                weakSelf.hasCallBack = YES;
+            }];
+        }
+            break;
+        case 4:
+        {
+            [[PayToolsManager defaultManager] startWeChatAuthSuccess:^(id data) {
+                [weakSelf.view makeToast:[NSString stringWithFormat:@"微信授权成功  auth_code=%@",data]];
+            } faild:^(NSString *errr) {
+                [weakSelf.view makeToast:errr];
                 weakSelf.hasCallBack = YES;
             }];
         }
